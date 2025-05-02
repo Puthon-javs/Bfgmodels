@@ -1,125 +1,107 @@
+"""
+Telegram Moderation Module
+Version: 1.1
+Commands: бан, мут, варн, разбан, размут, снятьварн
+GitHub: https://raw.githubusercontent.com/[ВАШ_ЛОГИН]/[РЕПОЗИТОРИЙ]/main/moderation.py
+"""
+
 from aiogram import Bot, types
 from aiogram.utils.exceptions import BadRequest
 from datetime import datetime, timedelta
 import asyncio
 
 class TelegramModerator:
-    """
-    Модуль модерации для Telegram-бота.
-    Поддерживает команды:
-    - бан [ID] [время] [причина]
-    - разбан [ID]
-    - варн [ID] [время] [причина]
-    - снятьварн [ID]
-    - мут [ID] [время] [причина]
-    - размут [ID]
-    """
-
     def __init__(self, bot: Bot):
         self.bot = bot
+        self.temp_data = {
+            'bans': {},
+            'mutes': {},
+            'warns': {}
+        }
 
-    async def _parse_time(self, time_str: str) -> timedelta:
-        """Парсит строку времени (например: '1 час', '3 дня')"""
-        time_units = {
-            'сек': 'seconds',
+    async def parse_time(self, text: str) -> timedelta:
+        """Парсит время в формате '1 час', '3 дня' и т.д."""
+        units = {
             'мин': 'minutes',
             'час': 'hours',
             'день': 'days',
+            'дня': 'days',
             'недел': 'weeks'
         }
-
-        parts = time_str.split()
+        
+        parts = text.split()
         if len(parts) != 2:
-            return timedelta(days=3)  # Значение по умолчанию
-
+            return timedelta(minutes=10)  # Дефолтное значение для мута
+            
         num, unit = parts
-        num = int(num) if num.isdigit() else 3  # Дефолтное значение если не число
+        num = int(num) if num.isdigit() else 1
+        
+        for key in units:
+            if unit.startswith(key):
+                return timedelta(**{units[key]: num})
+                
+        return timedelta(days=1)  # Если формат не распознан
 
-        for short, full in time_units.items():
-            if unit.startswith(short):
-                return timedelta(**{full: num})
-
-        return timedelta(days=3)  # Если формат не распознан
-
-    async def ban_user(
-        self,
-        chat_id: int,
-        user_id: int,
-        duration: str = "3 дня",
-        reason: str = "Не указана"
-    ) -> str:
-        """Бан пользователя с возможностью указать время"""
+    async def ban_user(self, chat_id: int, user_id: int, duration: str = "1 день", reason: str = "Не указана"):
+        """Бан пользователя"""
         try:
-            delta = await self._parse_time(duration)
+            delta = await self.parse_time(duration)
             until_date = datetime.now() + delta
-
+            
             await self.bot.ban_chat_member(
                 chat_id=chat_id,
                 user_id=user_id,
                 until_date=until_date
             )
-
-            # Авторазбан через время
+            
+            # Авторазбан
             if delta:
                 async def auto_unban():
                     await asyncio.sleep(delta.total_seconds())
-                    await self.bot.unban_chat_member(chat_id, user_id)
+                    await self.unban_user(chat_id, user_id)
                 asyncio.create_task(auto_unban())
-
-            return (f"🔨 Пользователь {user_id} забанен\n"
-                    f"⏳ Срок: {duration}\n"
-                    f"📝 Причина: {reason}")
-
+            
+            return f"🔨 Пользователь {user_id} забанен на {duration}\nПричина: {reason}"
         except BadRequest as e:
-            return f"❌ Ошибка бана: {e}"
+            return f"❌ Ошибка: {e}"
 
-    async def unban_user(self, chat_id: int, user_id: int) -> str:
+    async def unban_user(self, chat_id: int, user_id: int):
         """Разбан пользователя"""
         try:
             await self.bot.unban_chat_member(chat_id, user_id)
             return f"✅ Пользователь {user_id} разбанен"
         except BadRequest as e:
-            return f"❌ Ошибка разбана: {e}"
+            return f"❌ Ошибка: {e}"
 
-    async def warn_user(self, user_id: int, duration: str = "3 дня", reason: str = "Не указана") -> str:
-        """Выдать предупреждение"""
-        delta = await self._parse_time(duration)
-        return (f"⚠ Пользователь {user_id} получил предупреждение\n"
-                f"⏳ Срок: {duration}\n"
-                f"📝 Причина: {reason}")
-
-    async def mute_user(
-        self,
-        chat_id: int,
-        user_id: int,
-        duration: str = "10 минут",
-        reason: str = "Не указана"
-    ) -> str:
-        """Мут пользователя (запрет отправки сообщений)"""
+    async def mute_user(self, chat_id: int, user_id: int, duration: str = "10 минут", reason: str = "Не указана"):
+        """Мут пользователя"""
         try:
-            delta = await self._parse_time(duration)
+            delta = await self.parse_time(duration)
             until_date = datetime.now() + delta
-
+            
             await self.bot.restrict_chat_member(
                 chat_id=chat_id,
                 user_id=user_id,
                 permissions=types.ChatPermissions(
                     can_send_messages=False,
                     can_send_media_messages=False,
-                    can_send_other_messages=False,
-                    can_add_web_page_previews=False
+                    can_send_other_messages=False
                 ),
                 until_date=until_date
             )
-
-            return (f"🔇 Пользователь {user_id} в муте\n"
-                    f"⏳ Срок: {duration}\n"
-                    f"📝 Причина: {reason}")
-
+            
+            # Авторазмут
+            if delta:
+                async def auto_unmute():
+                    await asyncio.sleep(delta.total_seconds())
+                    await self.unmute_user(chat_id, user_id)
+                asyncio.create_task(auto_unmute())
+            
+            return f"🔇 Пользователь {user_id} в муте на {duration}\nПричина: {reason}"
         except BadRequest as e:
-            return f"❌ Ошибка мута: {e}"
+            return f"❌ Ошибка: {e}"
 
-    async def unmute_user(self, chat_id: int, user_id: int) -> str:
+    async def unmute_user(self, chat_id: int, user_id: int):
         """Снять мут"""
         try:
             await self.bot.restrict_chat_member(
@@ -129,4 +111,13 @@ class TelegramModerator:
             )
             return f"✅ Пользователь {user_id} размучен"
         except BadRequest as e:
-            return f"❌ Ошибка снятия мута: {e}"
+            return f"❌ Ошибка: {e}"
+
+    async def warn_user(self, user_id: int, duration: str = "1 день", reason: str = "Не указана"):
+        """Выдать предупреждение"""
+        delta = await self.parse_time(duration)
+        return f"⚠ Пользователь {user_id} получил предупреждение на {duration}\nПричина: {reason}"
+
+    async def unwarn_user(self, user_id: int):
+        """Снять предупреждение"""
+        return f"✅ С пользователя {user_id} снято предупреждение"
