@@ -11,7 +11,7 @@ async def hello(message: types.Message):
 @antispam
 async def send_random_emoji(message: types.Message):
     win, lose = await win_luser()  # Получаем случайные эмоджи
-    await message.answer(win, lose)  # Отправляем случайные эмоджи
+    await message.answer(f"{win} {lose}")  # Объединяем эмоджи в одну строку
 
 # Функция для регистрации хэндлеров
 def register_handlers(dp: Dispatcher):
@@ -22,4 +22,4 @@ def register_handlers(dp: Dispatcher):
 MODULE_DESCRIPTION = {
     'name': '😊 Приветствие и Эмоджи',
     'description': 'Модуль отвечает на слово "привет" и отправляет случайное эмоджи по команде /emj'
-                }
+}
