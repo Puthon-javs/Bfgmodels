@@ -64,6 +64,6 @@ async def unknown_command(message: types.Message):
 def register_handlers(dp: Dispatcher):
     dp.register_message_handler(start, lambda message: message.text.lower().startswith('привет'))
     dp.register_message_handler(botyara, lambda message: message.text.lower().startswith('бот'))
-dp.register_message_handler(how_are_you, lambda message: message.text.lower().startswith('как дела'))
-dp.register_message_handler(whats_your_name, lambda message: message.text.lower().startswith('как тебя зовут'))
-dp.register_message_handler(unknown_command, lambda message: message.text.lower().startswith('стат'))
+    dp.register_message_handler(how_are_you, lambda message: message.text.lower().startswith('как дела'))
+    dp.register_message_handler(whats_your_name, lambda message: message.text.lower().startswith('как тебя зовут'))
+    dp.register_message_handler(unknown_command, lambda message: message.text.lower().startswith('стат'))
