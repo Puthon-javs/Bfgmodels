@@ -1,25 +1,33 @@
-from aiogram import Dispatcher, types
-from commands.main import win_luser  # Импортируем случайные эмоджи
-from assets.antispam import antispam  # Импортируем антиспам
+from aiogram import types
 
-# Функция, которая отвечает на слово "привет"
-@antispam
-async def hello(message: types.Message):
-    await message.answer("Привет! Как дела?")
+from aiogram.dispatcher import Dispatcher
 
-# Функция для отправки случайного эмоджи
-@antispam
-async def send_random_emoji(message: types.Message):
-    win, lose = await win_luser()  # Получаем случайные эмоджи
-    await message.answer(win, lose)  # Отправляем случайные эмоджи
+import random
 
-# Функция для регистрации хэндлеров
+
+
+
+
+async def start(message: types.Message):
+
+	await message.answer('привет')
+
+
+
+
+
+async def botyara(message: types.Message):
+
+	random_message = random.choice(["Я тут 😊", "На месте 👍", "Работает 💻"])
+
+	await message.reply(random_message)
+
+
+
+
+
 def register_handlers(dp: Dispatcher):
-    dp.register_message_handler(hello, lambda message: message.text.lower() == 'привет')
-    dp.register_message_handler(send_random_emoji, commands=['emj'])
 
-# Описание модуля
-MODULE_DESCRIPTION = {
-    'name': '😊 Приветствие и Эмоджи',
-    'description': 'Модуль отвечает на слово "привет" и отправляет случайное эмоджи по команде /emj'
-}
+    dp.register_message_handler(start, lambda message: message.text.lower().startswith('привет'))
+
+    dp.register_message_handler(botyara, lambda message: message.text.lower().startswith('ботяра'))
