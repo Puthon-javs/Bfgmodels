@@ -4,7 +4,7 @@ import random
 import time
 
 # 🔐 Замените на свой Telegram user_id
-ADMIN_ID = 123456789
+ADMIN_ID = 8174117949
 
 # 📊 Статистика
 stats = {
