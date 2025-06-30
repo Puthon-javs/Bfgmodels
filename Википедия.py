@@ -1,51 +1,35 @@
+
 from aiogram import types, Dispatcher
-import wikipedia
-import re
+import openai
+from config import API_KEY
 
-# Устанавливаем язык
-wikipedia.set_lang("ru")
+openai.api_key = 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
 
-def escape_md(text: str) -> str:
-    """
-    Экранирует специальные символы для MarkdownV2
-    """
-    return re.sub(r'([_*()~`>#+=|{}.!\\-])', r'\\\1', text)
+async def handle_wikipedia(message: types.Message):
+    if not message.text.lower().startswith("википедия "):
+        return
 
-async def wikipedia_handler(message: types.Message):
-    text = message.text.strip()
+    query = message.text.split(" ", 1)[1].strip()
+    if not query:
+        await message.reply("❌ Пожалуйста, укажи запрос после слова 'википедия'")
+        return
 
-    if text.startswith("/википедия") or text.lower().startswith("википедия "):
-        parts = text.split(" ", 1)
-        if len(parts) < 2:
-            await message.reply("❗ Укажи, что искать. Пример: `/википедия Python`", parse_mode="MarkdownV2")
-            return
+    prompt = f"Представь, что ты Википедия. Ответь кратко и информативно, как энциклопедия, на запрос: {query}"
 
-        query = parts[1]
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5,
+            max_tokens=700,
+        )
+        result = response.choices[0].message["content"].strip()
 
-        try:
-            # Поиск статьи
-            page = wikipedia.page(query)
-            summary = wikipedia.summary(query, sentences=5)
+        # Отправка с оформлением как код-блок
+        await message.reply(f"```java\n{result}\n```", parse_mode="Markdown")
 
-            title = escape_md(page.title)
-            content = escape_md(summary)
-
-            # Формируем ответ
-            response = f"🔍 *{title}*\n```java\n{content}\n```"
-            await message.reply(response, parse_mode="MarkdownV2")
-
-        except wikipedia.exceptions.DisambiguationError as e:
-            options = "\n".join([escape_md(opt) for opt in e.options[:5]])
-            await message.reply(f"⚠️ Запрос слишком общий, уточни:\n```{options}```", parse_mode="MarkdownV2")
-
-        except wikipedia.exceptions.PageError:
-            await message.reply("❌ Статья не найдена.", parse_mode="MarkdownV2")
-
-        except Exception as e:
-            error = escape_md(str(e))
-            await message.reply(f"⚠️ Ошибка:\n```{error}```", parse_mode="MarkdownV2")
-
+    except Exception as e:
+        await message.reply(f"⚠️ Ошибка запроса: {e}")
 
 def register_handlers(dp: Dispatcher):
-    dp.register_message_handler(wikipedia_handler, lambda msg: msg.text.lower().startswith("википедия"))
-    dp.register_message_handler(wikipedia_handler, commands=["википедия"])
+    dp.register_message_handler(handle_wikipedia, lambda msg: msg.text.lower().startswith("википедия "))
