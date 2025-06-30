@@ -1,65 +1,196 @@
-from aiogram import types, Dispatcher from aiogram.dispatcher.filters import Text from aiogram.types import Message from datetime import datetime import asyncio import json import os
+import json
+import os
+import time
+from aiogram import Router, types, F
+from aiogram.filters import Command
 
-📂 Файл базы данных
+router = Router()
 
-DB_FILE = "admin_module_data.json" OWNER_ID = 8174117949  # Заменить на твой ID
-DB_FILE = "admin_module_data.json" OWNER_USERNAME = "NEWADA_Night"
+DATA_FILE = "admin_data.json"
+OWNER_ID = 8174117949
+OWNER_USERNAME = "@NEWADA_Night"
 
-📦 Загрузка/сохранение базы
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w") as f:
+        json.dump({
+            "admins": [],
+            "zga": [],
+            "hiscoin": {},
+            "ranks": {},
+            "admin_chat": None,
+            "reports": []
+        }, f)
 
-def load_db(): if os.path.exists(DB_FILE): with open(DB_FILE, "r") as f: return json.load(f) return {"hiscoin": {}, "ranks": {}, "reports": []}
+with open(DATA_FILE, "r") as f:
+    db = json.load(f)
 
-def save_db(data): with open(DB_FILE, "w") as f: json.dump(data, f, indent=2)
+def save_db():
+    with open(DATA_FILE, "w") as f:
+        json.dump(db, f)
 
-📊 Инициализация
+cooldowns = {}
 
-DB = load_db() CD_USERS = set()
+def is_owner(user_id: int):
+    return user_id == OWNER_ID
 
-📌 Команды администраций
+@router.message(Command("установить админ чат"))
+async def set_admin_chat(message: types.Message):
+    if not is_owner(message.from_user.id):
+        return
+    db["admin_chat"] = message.chat.id
+    save_db()
+    await message.reply("✅ Установлен этот чат как админ-центр.")
 
-async def call_admins(msg: Message): await msg.answer("🛡️ Вызов администрации... Ожидайте! 🔔")
+@router.message(F.text.lower().startswith("репорт"))
+async def report_admins(message: types.Message):
+    text = message.text[6:].strip()
+    if not text:
+        await message.reply("⚠️ Укажи текст жалобы.")
+        return
+    db["reports"].append({"user": message.from_user.id, "text": text})
+    db["reports"] = db["reports"][-10:]
+    save_db()
+    admin_chat = db.get("admin_chat")
+    if admin_chat:
+        await message.bot.send_message(admin_chat, f"🚨 Репорт от <a href='tg://user?id={message.from_user.id}'>{message.from_user.full_name}</a>:\n{text}")
+    await message.reply("📨 Репорт отправлен.")
 
-async def call_zga(msg: Message): await msg.answer("🔰 Заместитель Главной Админши уже в пути!")
+@router.message(Command("просмотр_репортов"))
+async def show_reports(message: types.Message):
+    if not is_owner(message.from_user.id):
+        return
+    if not db["reports"]:
+        await message.reply("Нет репортов.")
+        return
+    text = "\n\n".join([f"👤 <code>{r['user']}</code>:\n{r['text']}" for r in db["reports"]])
+    await message.reply(f"<b>📋 Последние репорты:</b>\n{text}")
 
-async def call_owner(msg: Message): await msg.answer("👑 Владелец призван на место!")
+@router.message(F.text.lower().in_([
+    "позвать админа", "позвать админов", "позвать зга",
+    "позвать владельца", "позвать еву", "админ", "админы", "зга", "ева"
+]))
+async def call_admins(message: types.Message):
+    call_map = {
+        "позвать админа": "📣 Вызов: обычный админ!",
+        "позвать админов": "📣 Вызов: все админы, на связи!",
+        "позвать зга": "📣 Вызов: заместитель главной админши!",
+        "позвать владельца": f"📣 Вызов: {OWNER_USERNAME}, ты нужен здесь!",
+        "позвать еву": f"📣 Вызов: {OWNER_USERNAME} (Ева), ты нужна!",
+        "админ": "⚠️ Кто-то звал админа?",
+        "админы": "⚠️ Вызываются админы...",
+        "зга": "⚠️ Заместитель админа на подходе...",
+        "ева": f"⚠️ @{OWNER_USERNAME} скоро будет здесь.",
+    }
+    await message.reply(call_map[message.text.lower()])
 
-async def call_eva(msg: Message): await msg.answer("👩‍💻 Владелец (Ева) уведомлена!")
+@router.message(F.text.lower() == "список админов")
+async def list_admins(message: types.Message):
+    text = "<b>📋 Список админов:</b>\n"
+    text += f"👑 Владелец: <a href='tg://user?id={OWNER_ID}'>{OWNER_USERNAME}</a> — <code>{OWNER_ID}</code>\n\n"
 
-📜 Репорты
+    if db["zga"]:
+        text += "🛡 ЗГА:\n"
+        for uid in db["zga"]:
+            text += f"• <a href='tg://user?id={uid}'>ID: {uid}</a>\n"
+    else:
+        text += "🛡 ЗГА: нет\n"
 
-async def report_handler(msg: Message): if not msg.reply_to_message: return await msg.reply("Ответьте на сообщение, чтобы отправить репорт") DB['reports'].append({ "from": msg.from_user.id, "to": msg.reply_to_message.from_user.id, "reason": msg.text, "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S") }) save_db(DB) await msg.reply("📝 Репорт отправлен")
+    if db["admins"]:
+        text += "\n👨‍💻 Админы:\n"
+        for uid in db["admins"]:
+            text += f"• <a href='tg://user?id={uid}'>ID: {uid}</a>\n"
+    else:
+        text += "\n👨‍💻 Админов нет\n"
 
-async def view_reports(msg: Message): if not DB['reports']: return await msg.reply("📭 Репортов нет") text = "📜 Репорты:\n" for r in DB['reports'][-10:]: text += f"🕒 {r['datetime']}\n🎯 ID цели: {r['to']}\n📖 Причина: {r['reason']}\n\n" await msg.answer(text)
+    await message.reply(text)
 
-🪙 Фарм Hiscoin
+@router.message(F.text.lower() == "фарм")
+async def farm(message: types.Message):
+    user_id = str(message.from_user.id)
+    now = time.time()
+    if user_id in cooldowns and now - cooldowns[user_id] < 180:
+        await message.reply("⌛ Жди 3 минуты перед следующим фармом.")
+        return
+    cooldowns[user_id] = now
+    db["hiscoin"][user_id] = db["hiscoin"].get(user_id, 0) + 10
+    save_db()
+    await message.reply("💰 +10 Hiscoin!")
 
-async def farm_handler(msg: Message): uid = str(msg.from_user.id) if uid in CD_USERS: return await msg.reply("⏳ Подожди 3 минуты") CD_USERS.add(uid) DB['hiscoin'][uid] = DB['hiscoin'].get(uid, 0) + 1 save_db(DB) await msg.reply("💸 +1 Hiscoin") await asyncio.sleep(180) CD_USERS.remove(uid)
+@router.message(F.text.lower() == "мой мешок")
+async def my_bag(message: types.Message):
+    user_id = str(message.from_user.id)
+    coins = db["hiscoin"].get(user_id, 0)
+    await message.reply(f"🎒 У тебя {coins} Hiscoin.")
 
-async def show_balance(msg: Message): uid = str(msg.from_user.id) coins = DB['hiscoin'].get(uid, 0) await msg.reply(f"💰 У тебя {coins} Hiscoin")
+@router.message(F.text.lower() == "топ hiscoin")
+async def top_hiscoin(message: types.Message):
+    if not db["hiscoin"]:
+        await message.reply("Пока никто не фармил.")
+        return
+    sorted_users = sorted(db["hiscoin"].items(), key=lambda x: x[1], reverse=True)[:10]
+    text = "<b>🏆 Топ Hiscoin:</b>\n"
+    for i, (uid, coins) in enumerate(sorted_users, 1):
+        text += f"{i}. <a href='tg://user?id={uid}'>ID {uid}</a> — {coins}💰\n"
+    await message.reply(text)
 
-async def show_top(msg: Message): top = sorted(DB['hiscoin'].items(), key=lambda x: x[1], reverse=True)[:10] text = "📈 Топ Hiscoin:\n" for i, (uid, amt) in enumerate(top, 1): text += f"{i}. {uid} — {amt}🪙\n" await msg.reply(text)
+@router.message(Command("ранг"))
+async def show_rank(message: types.Message):
+    user_id = str(message.from_user.id)
+    rank = db["ranks"].get(user_id, 0)
+    await message.reply(f"🏅 Твой ранг: {rank}")
 
-🧱 Ранги
+@router.message(F.text.lower().startswith("+ранг"))
+async def add_rank(message: types.Message):
+    if not message.reply_to_message:
+        await message.reply("⚠️ Ответь на сообщение пользователя.")
+        return
+    try:
+        value = int(message.text.split()[1])
+    except:
+        await message.reply("⚠️ Укажи число ранга.")
+        return
+    user_id = str(message.reply_to_message.from_user.id)
+    if value == 10 and not is_owner(message.from_user.id):
+        await message.reply("❌ Только владелец может назначить 10 ранг.")
+        return
+    db["ranks"][user_id] = db["ranks"].get(user_id, 0) + value
+    save_db()
+    await message.reply(f"✅ Ранг пользователя обновлён: {db['ranks'][user_id]}")
 
-async def add_rank(msg: Message): if not msg.reply_to_message: return await msg.reply("Нужно ответить на сообщение") if msg.from_user.id != OWNER_ID and '10' in msg.text: return await msg.reply("❌ Только владелец может назначить 10 ранг") uid = str(msg.reply_to_message.from_user.id) rank = msg.text.split()[-1] DB['ranks'][uid] = int(rank) save_db(DB) await msg.reply(f"✅ Ранг {rank} установлен")
+@router.message(F.text.lower().startswith("-ранг"))
+async def remove_rank(message: types.Message):
+    if not message.reply_to_message:
+        await message.reply("⚠️ Ответь на сообщение пользователя.")
+        return
+    try:
+        value = int(message.text.split()[1])
+    except:
+        await message.reply("⚠️ Укажи число для понижения.")
+        return
+    user_id = str(message.reply_to_message.from_user.id)
+    db["ranks"][user_id] = max(0, db["ranks"].get(user_id, 0) - value)
+    if db["ranks"][user_id] == 0:
+        del db["ranks"][user_id]
+    save_db()
+    await message.reply("⬇️ Ранг понижен.")
 
-async def remove_rank(msg: Message): if not msg.reply_to_message: return await msg.reply("Нужно ответить на сообщение") uid = str(msg.reply_to_message.from_user.id) if uid in DB['ranks']: DB['ranks'][uid] -= 1 if DB['ranks'][uid] <= 0: del DB['ranks'][uid] save_db(DB) await msg.reply("⬇️ Ранг понижен")
+@router.message(F.text.lower().startswith("википедия"))
+async def wikipedia(message: types.Message):
+    query = message.text[9:].strip()
+    if not query:
+        await message.reply("⚠️ Введите запрос.")
+        return
+    await message.reply(f"🔍 <b>{query}</b> — (результат фейковый, заглушка).")
 
-async def show_rank_admins(msg: Message): if not DB['ranks']: return await msg.reply("Нет админов") text = "👥 Админы по рангам:\n" for uid, rank in DB['ranks'].items(): text += f"👤 {uid} — Ранг {rank}\n" await msg.reply(text)
+@router.message(F.text.lower() == "!праздник")
+async def pin_holiday(message: types.Message):
+    await message.pin()
+    await message.reply("📌 Праздник закреплён!")
 
-🎉 Праздник
+@router.message(F.text.lower() == ".ping")
+async def ping_reply(message: types.Message):
+    await message.reply("🏓 Пинг-понг, я на связи!")
 
-async def prazdnik(msg: Message): await msg.answer("🎉 Сегодня праздник! Поздравляем всех!")
-
-👥 Список админов
-
-async def all_admins(msg: Message): if not DB['ranks']: return await msg.reply("Нет админов") text = "📋 Все админы:\n" for uid in DB['ranks']: text += f"👤 ID: {uid}\n" await msg.reply(text)
-
-🔍 Мой ID
-
-async def my_id(msg: Message): await msg.reply(f"🆔 Твой ID: {msg.from_user.id}")
-
-📎 Регистрация
-
-def register_handlers(dp: Dispatcher): dp.register_message_handler(report_handler, Text(equals="репорт")) dp.register_message_handler(view_reports, Text(equals="репорты")) dp.register_message_handler(farm_handler, Text(equals="фарма")) dp.register_message_handler(show_balance, Text(equals=["мешок", "мой мешок"])) dp.register_message_handler(show_top, Text(equals="топ hiscoin")) dp.register_message_handler(add_rank, Text(startswith="+ранг")) dp.register_message_handler(remove_rank, Text(startswith="-ранг")) dp.register_message_handler(show_rank_admins, Text(equals="ранг админы")) dp.register_message_handler(call_admins, Text(equals=["админ", "позвать админов"])) dp.register_message_handler(call_zga, Text(equals="позвать зга")) dp.register_message_handler(call_owner, Text(equals="позвать владельца")) dp.register_message_handler(call_eva, Text(equals="позвать еву")) dp.register_message_handler(prazdnik, Text(equals=["!праздник", "!празник"])) dp.register_message_handler(all_admins, Text(equals=["админы", ".админы", "!админы"])) dp.register_message_handler(my_id, Text(equals="мой ид"))
-
+@router.message(F.text.lower() == "бот")
+async def bot_reply(message: types.Message):
+    await message.reply("🤖 Я тут, красивый и готов помогать!")
