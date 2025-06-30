@@ -1,98 +1,79 @@
-from aiogram import types, Dispatcher from user import BFGuser from assets.antispam import antispam, new_earning import random
+from aiogram import types, Dispatcher import random
 
-active_players = set() players = {} squads = {}
+Укажи свой ID здесь
 
-@antispam async def biowar_handler(message: types.Message, user: BFGuser): uid = user.user_id text = message.text.lower().strip()
+OWNER_ID = 8174117949
 
-if text == "/bio_on":
-    active_players.add(uid)
-    await message.answer("🧬 Модуль Биовойна активирован. Введите команду или /помощь")
-    return
+war_users = {}
 
-if text == "/bio_off":
-    active_players.discard(uid)
-    await message.answer("🚪 Вы покинули модуль Биовойна.")
-    return
+SHOP = { "военный завод": 4_000_000, "MG42": 500_000, "танк Т-90": 1_200_000, "вертолёт": 1_500_000, "бункер": 1_000_000 }
 
-if text == "/помощь":
-    await message.answer(
-        "📜 Команды Биовойны:\n"
-        "вскрыть, поиск, синтез, использовать [предмет]\n"
-        "магазин, торговец, транспорт, союз, рейд, PvP: вызов @ник / принять / удар / защита"
-    )
-    return
+RANKS = [ (2_000_000, "👑 Генерал"), (500_000, "🛡 Командир"), (100_000, "🪖 Боец"), (0, "🔰 Новобранец") ]
 
-if uid not in active_players:
-    return
+async def warbase_handler(message: types.Message): uid = message.from_user.id text = message.text.lower().strip()
 
-if uid not in players:
-    players[uid] = {
-        "hp": 100, "infection": 0, "energy": 5, "components": 0,
-        "inventory": ["аптечка", "противоядие"],
-        "resources": 5, "base": 0, "vehicle": None, "squad": None
-    }
+if uid not in war_users:
+    war_users[uid] = {"balance": 10_000, "items": []}
 
-p = players[uid]
+p = war_users[uid]
 reply = ""
 
-if text == "вскрыть":
-    p["components"] += 1
-    reply = "🧪 Вы вскрыли зону и нашли компонент."
+if text == "военная база":
+    reply = "🏰 Добро пожаловать в военную базу:\n"
+    for item, price in SHOP.items():
+        reply += f"🔹 {item} — {price} эктоплазмы\n"
+    reply += "\nДля покупки: купить [название]"
 
-elif text == "поиск":
-    found = random.choice(["🔩 металл", "🧬 биоматериал", "⚗️ реагенты"])
-    p["inventory"].append(found)
-    reply = f"🔍 Найден ресурс: {found}"
-
-elif text.startswith("использовать"):
-    item = text.replace("использовать", "").strip()
-    if item in p["inventory"]:
-        p["inventory"].remove(item)
-        reply = f"✅ Использовано: {item}"
+elif text.startswith("купить"):
+    item = text.replace("купить", "").strip()
+    if item in SHOP:
+        cost = SHOP[item]
+        if p["balance"] >= cost:
+            p["balance"] -= cost
+            p["items"].append(item)
+            reply = f"✅ Куплено: {item}. Остаток: {p['balance']}"
+        else:
+            reply = "❌ Недостаточно средств."
     else:
-        reply = f"❌ У вас нет предмета: {item}"
+        reply = "❌ Нет такого объекта."
 
-elif text == "синтез":
-    if p["components"] >= 3:
-        p["inventory"].append("вакцина")
-        p["components"] -= 3
-        reply = "💉 Вы синтезировали вакцину."
+elif text == "мой арсенал":
+    items = p["items"] or ["— пусто —"]
+    reply = "🎒 Арсенал:\n" + "\n".join(f"• {i}" for i in items)
+    reply += f"\n💰 Баланс: {p['balance']} эктоплазмы"
+
+elif text == "мой ранг":
+    bal = p["balance"]
+    for required, rank in RANKS:
+        if bal >= required:
+            reply = f"🎖 Ваш ранг: {rank}\n💰 Эктоплазма: {bal}"
+            break
+
+elif text.startswith("бдать"):
+    if uid != OWNER_ID:
+        reply = "⛔ Только владелец может выдавать донат."
+    elif not message.reply_to_message:
+        reply = "📩 Используйте в ответ на сообщение игрока. Пример: бдать 10000"
     else:
-        reply = "❌ Нужно минимум 3 компонента."
-
-elif text.startswith("создать союз"):
-    name = text.replace("создать союз", "").strip()
-    squads[name] = [uid]
-    p["squad"] = name
-    reply = f"🛡️ Союз '{name}' создан."
-
-elif text.startswith("вступить союз"):
-    name = text.replace("вступить союз", "").strip()
-    if name in squads:
-        squads[name].append(uid)
-        p["squad"] = name
-        reply = f"🤝 Вы вступили в союз '{name}'"
-    else:
-        reply = "❌ Союз не найден."
-
-elif text == "союз":
-    reply = f"🛡️ Ваш союз: {p['squad'] or 'отсутствует'}"
-
-elif text == "рейд":
-    if p["squad"]:
-        loot = random.randint(3, 8)
-        p["resources"] += loot
-        reply = f"⚔️ Рейд успешен! Получено {loot} ресурсов."
-    else:
-        reply = "❌ Вы не состоите в союзе."
+        parts = text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            reply = "❌ Укажите сумму: бдать 10000"
+        else:
+            amount = int(parts[1])
+            target_id = message.reply_to_message.from_user.id
+            if war_users[uid]["balance"] < amount:
+                reply = "❌ Недостаточно средств у отправителя."
+            else:
+                war_users[uid]["balance"] -= amount
+                if target_id not in war_users:
+                    war_users[target_id] = {"balance": 0, "items": []}
+                war_users[target_id]["balance"] += amount
+                reply = f"✅ Переведено {amount} эктоплазмы. Остаток: {war_users[uid]['balance']}"
 
 else:
-    reply = "🤖 Неизвестная команда. Напишите /помощь"
+    reply = "❓ Неизвестная команда. Доступно: военная база, купить, мой арсенал, мой ранг, бдать (только для владельца)"
 
 await message.answer(reply)
-await new_earning(message)
 
-def register_handlers(dp: Dispatcher): dp.register_message_handler( biowar_handler, lambda m: m.text and m.chat.type in ["private", "supergroup"] )
-
-MODULE_DESCRIPTION = { "name": "🧬 Биовойна", "description": "Модуль: PvP, союз, рейды, торговцы, заражение и синтез. Стиль Iris." }
+def register_handlers(dp: Dispatcher): dp.register_message_handler(warbase_handler, lambda m: m.text and m.chat.type in ["private", "supergroup"])
 
