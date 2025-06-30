@@ -146,7 +146,7 @@ def register_handlers(dp: Dispatcher):
     dp.register_message_handler(set_admin_chat, lambda m: m.text.lower().startswith("установить админ"))
     dp.register_message_handler(report_handler, lambda m: m.text.lower().startswith("репорт"))
     dp.register_message_handler(farm_command, lambda m: m.text.lower() == "фарм")
-    dp.register_message_handler(check_balance, lambda m: m.text.lower() == "мешок")
+    dp.register_message_handler(check_balance, lambda m: m.text.lower() == "мой мешок")
     dp.register_message_handler(top_hiscoin, lambda m: m.text.lower() == "топ hiscoin")
     dp.register_message_handler(set_rank, lambda m: m.text.lower().startswith("+ранг"))
     dp.register_message_handler(downgrade_rank, lambda m: m.text.lower().startswith("-ранг"))
