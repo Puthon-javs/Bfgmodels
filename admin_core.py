@@ -2,7 +2,7 @@ from aiogram import types, Dispatcher
 import time
 
 # === Владелец ===
-OWNER_ID = 123456789  # 👈 Укажи свой user_id
+OWNER_ID = 8174117949  # 👈 Укажи свой user_id
 OWNER_USERNAME = "NEWADA_Night"  # 👈 Укажи свой username без "@"
 
 # Хранилища
