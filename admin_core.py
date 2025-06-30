@@ -1,12 +1,16 @@
 from aiogram import types, Dispatcher
 import time
 
+# === Владелец ===
+OWNER_ID = 123456789  # 👈 Укажи свой user_id
+OWNER_USERNAME = "NEWADA_Night"  # 👈 Укажи свой username без "@"
+
 # Хранилища
 user_data = {}
 admin_chat_id = None
 hiscoin_balance = {}
 last_farm_time = {}
-user_ranks = {}
+user_ranks = {OWNER_ID: 10}  # Владелец сразу получает 10 ранг
 
 rank_titles = {
     1: "★ Рядовой",
@@ -42,7 +46,11 @@ async def call_zga(message: types.Message):
     await message.reply("👩‍✈️ Вызван заместитель главной админши!")
 
 async def call_owner(message: types.Message):
-    await message.reply("👑 Вызван владелец проекта — Ева!")
+    await message.reply(f"👑 Вызван владелец проекта — @{OWNER_USERNAME}!")
+    try:
+        await message.bot.send_message(OWNER_ID, f"🚨 Вызов от @{message.from_user.username} в чате {message.chat.title or message.chat.id}")
+    except Exception as e:
+        await message.reply("⚠️ Не удалось отправить сообщение владельцу (возможно, он заблокировал бота).")
 
 # .ping
 async def ping_passthrough(message: types.Message):
@@ -66,7 +74,6 @@ async def farm_command(message: types.Message):
     now = time.time()
     if uid in last_farm_time and now - last_farm_time[uid] < 180:
         return await message.reply("⏳ Подожди 3 минуты между фармом.")
-
     hiscoin_balance[uid] = hiscoin_balance.get(uid, 0) + 10
     last_farm_time[uid] = now
     await message.reply("💰 Ты получил 10 Hiscoin!")
@@ -88,8 +95,8 @@ async def set_rank(message: types.Message):
         rank = int(args[1])
     except ValueError:
         return await message.reply("❌ Номер ранга должен быть числом.")
-    if rank == 10 and message.from_user.username != "Ева":
-        return await message.reply("🚫 Только Ева может выдать 10-й ранг.")
+    if rank == 10 and message.from_user.id != OWNER_ID:
+        return await message.reply("🚫 Только владелец может выдать 10-й ранг.")
     user_ranks[message.reply_to_message.from_user.id] = rank
     await message.reply(f"✅ Ранг установлен: {rank_titles.get(rank, str(rank))}")
 
@@ -119,7 +126,7 @@ async def my_rank(message: types.Message):
     title = rank_titles.get(rank, "Без ранга")
     await message.reply(f"🎖️ Твой ранг: {title} ({rank})")
 
-# Регистрируем все хендлеры
+# Регистрация всех хендлеров
 def register_handlers(dp: Dispatcher):
     dp.register_message_handler(set_admin_chat, commands=["установить", "установить_админ_чат"])
     dp.register_message_handler(report_handler, commands=["репорт"])
