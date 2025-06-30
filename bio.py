@@ -3,7 +3,20 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 from commands.db import cursor, conn
 from assets.transform import transform_int as tr
 import random
+import sqlite3
 
+# Авто-добавление недостающих колонок
+def ensure_escape_columns():
+    cursor.execute("PRAGMA table_info(users)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if "escape_wins" not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN escape_wins INTEGER DEFAULT 0")
+    if "escape_fails" not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN escape_fails INTEGER DEFAULT 0")
+    conn.commit()
+ensure_escape_columns()
+
+# Статьи
 uk_articles = [
     {"number": 158, "title": "Кража", "text": "Тайное хищение чужого имущества."},
     {"number": 228, "title": "Наркотики", "text": "Хранение наркотиков."},
@@ -49,13 +62,11 @@ async def choose_difficulty(call: CallbackQuery):
     uid = call.from_user.id
     diff = call.data.split("_")[-1]
     article = random.choice(uk_articles)
-
     players[uid] = {
         "article": article,
         "difficulty": diff,
         "stage": 1
     }
-
     await call.message.edit_text(
         f"📜 Статья {article['number']} — {article['title']}\n"
         f"{article['text']}\n\n"
@@ -89,23 +100,19 @@ async def handle_step(uid, target, stage, index, is_button=True):
             if is_button:
                 await target.answer("⛔ Неактуальный ход.")
             return
-
         actions = STAGES.get(stage)
         if not actions or index >= len(actions):
             if is_button:
                 await target.answer("❌ Неверный выбор.")
             return
-
         label, result = actions[index]
         fail_chance = DIFFICULTY[players[uid]["difficulty"]]["fail"]
-
         if result == "fail" or random.random() < fail_chance:
             cursor.execute("UPDATE users SET escape_fails = escape_fails + 1 WHERE user_id = ?", (uid,))
             conn.commit()
             msg = "🚨 Вас поймали. Побег провален."
             del players[uid]
             return await target.edit_text(msg) if is_button else await target.reply(msg)
-
         if result == "win":
             diff = players[uid]["difficulty"]
             prize = DIFFICULTY[diff]
@@ -115,11 +122,9 @@ async def handle_step(uid, target, stage, index, is_button=True):
             msg = f"🚪 Ты сбежал!\n🎁 +{tr(prize['money'])} монет, +{tr(prize['exp'])} опыта"
             del players[uid]
             return await target.edit_text(msg) if is_button else await target.reply(msg)
-
         players[uid]["stage"] = result
         msg = f"🔄 Этап {result} — выбери действие (или напиши 1, 2, 3):"
         return await target.edit_text(msg, reply_markup=next_stage_kb(uid)) if is_button else await target.reply(msg, reply_markup=next_stage_kb(uid))
-
     except Exception as e:
         print(f"[ERROR] Побег: {e}")
         return await target.answer("❌ Ошибка при обработке.") if is_button else await target.reply("❌ Произошла ошибка.")
