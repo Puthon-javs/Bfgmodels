@@ -2,7 +2,7 @@ from aiogram import types, Dispatcher from aiogram.dispatcher.filters import Tex
 
 📂 Файл базы данных
 
-DB_FILE = "admin_module_data.json" OWNER_ID = 696969696  # Заменить на твой ID
+DB_FILE = "admin_module_data.json" OWNER_ID = 8174117949  # Заменить на твой ID
 DB_FILE = "admin_module_data.json" OWNER_USERNAME = "NEWADA_Night"
 
 📦 Загрузка/сохранение базы
