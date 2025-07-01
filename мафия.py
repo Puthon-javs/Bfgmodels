@@ -1,5 +1,3 @@
-TRUE MAFIA BOT (FSM-ЛОГИКА, РОЛИ, ГОЛОСОВАНИЕ, БЕЗ ТОКЕНА)
-
 from aiogram import Bot, Dispatcher, types from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton from aiogram.contrib.fsm_storage.memory import MemoryStorage from aiogram.dispatcher import FSMContext from aiogram.dispatcher.filters.state import State, StatesGroup import asyncio, random
 
 API_TOKEN = ""  # токен не требуется, оставь пустым или вставь вручную при запуске
