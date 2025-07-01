@@ -1,54 +1,189 @@
-from aiogram import Bot, Dispatcher, types from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton from aiogram.contrib.fsm_storage.memory import MemoryStorage from aiogram.dispatcher import FSMContext from aiogram.dispatcher.filters.state import State, StatesGroup import asyncio, random
+# -*- coding: utf-8 -*-
 
-API_TOKEN = ""  # токен не требуется, оставь пустым или вставь вручную при запуске
+from aiogram import types
+from aiogram.dispatcher import Dispatcher, FSMContext
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.dispatcher.filters.state import State, StatesGroup
+import json, os, random, datetime
 
-bot = Bot(token=API_TOKEN) dp = Dispatcher(bot, storage=MemoryStorage())
+# === НАСТРОЙКИ ===
+OWNER_ID = 8174117949
+OWNER_USERNAME = "@NEWADA_Night"
+DATABASE_PATH = "mafia_db.json"
 
-Игровые состояния
+# === РОЛИ ===
+ROLES = [
+    "👨🏼 Мирный житель",
+    "🤵🏻 Дон",
+    "🤵🏼 Мафия",
+    "🕵️‍ Комиссар",
+    "👮🏼‍♂️ Сержант",
+    "👨🏼‍⚕️ Доктор",
+    "🔪 Маньяк",
+    "💃🏼 Любовница",
+    "👨🏼‍💼 Адвокат",
+    "🤦🏼‍♂️ Самоубийца",
+    "🧙🏼‍♂️ Бомж",
+    "🤞 Счастливчик",
+    "💣 Камикадзе"
+]
 
-class MafiaStates(StatesGroup): waiting_for_players = State() night_phase = State() day_vote = State()
+# === FSM ===
+class GameState(StatesGroup):
+    waiting_players = State()
+    night_action = State()
+    day_vote = State()
+    end_game = State()
 
-players = {}  # {user_id: {"name": str, "role": str, "alive": bool}} game_chat_id = None
+# === ЗАГРУЗКА / СОХРАНЕНИЕ БД ===
+def load_db():
+    if os.path.exists(DATABASE_PATH):
+        with open(DATABASE_PATH, "r") as f:
+            return json.load(f)
+    return {"players": {}, "stats": {}, "games": [], "admin_chat": None}
 
-ROLES = [ "🤵🏻 Дон", "🤵🏼 Мафия", "🕵️‍ Комиссар", "👮🏼‍♂️ Сержант", "👨🏼‍⚕️ Доктор", "🔪 Маньяк", "👨🏼 Мирный житель", "💃🏼 Любовница", "👨🏼‍💼 Адвокат", "🤦🏼‍♂️ Самоубийца", "🧙🏼‍♂️ Бомж", "🤞 Счастливчик", "💣 Камикадзе" ]
+def save_db():
+    with open(DATABASE_PATH, "w") as f:
+        json.dump(db, f, ensure_ascii=False, indent=2)
 
-РЕГИСТРАЦИЯ ИГРОКОВ
+db = load_db()
+current_game = {"players": [], "roles": {}, "alive": [], "phase": "lobby", "votes": {}, "night_actions": {}, "day": 0}
 
-@dp.message_handler(commands=['start_game']) async def start_game(msg: types.Message, state: FSMContext): global players, game_chat_id game_chat_id = msg.chat.id players = {} await state.set_state(MafiaStates.waiting_for_players.state) await msg.answer("🎲 Игра начинается! Напиши /join чтобы участвовать.")
+# === ХЭЛПЕРЫ ===
+def get_role(uid):
+    return current_game["roles"].get(str(uid), "👨🏼 Мирный житель")
 
-@dp.message_handler(commands=['join'], state=MafiaStates.waiting_for_players) async def join(msg: types.Message): if msg.from_user.id not in players: players[msg.from_user.id] = {"name": msg.from_user.full_name, "role": None, "alive": True} await msg.answer(f"✅ {msg.from_user.full_name} присоединился к игре.")
+def is_alive(uid):
+    return uid in current_game["alive"]
 
-@dp.message_handler(commands=['begin'], state=MafiaStates.waiting_for_players) async def begin(msg: types.Message, state: FSMContext): if len(players) < 3: await msg.answer("⚠️ Нужно минимум 3 игрока.") return
+def mention(uid):
+    return f'<a href="tg://user?id={uid}">{uid}</a>'
 
-assigned = random.sample(ROLES, len(players))
-for user_id, role in zip(players, assigned):
-    players[user_id]["role"] = role
-    try:
-        await bot.send_message(user_id, f"🎭 Ты - {role}!")
-    except:
-        await msg.answer(f"⚠️ Не удалось отправить роль {players[user_id]['name']}, он должен быть в боте.")
+def assign_roles():
+    players = current_game["players"]
+    random.shuffle(players)
+    roles_pool = ROLES.copy()
+    random.shuffle(roles_pool)
+    for uid in players:
+        role = roles_pool.pop() if roles_pool else "👨🏼 Мирный житель"
+        current_game["roles"][str(uid)] = role
+        current_game["alive"].append(uid)
 
-await state.set_state(MafiaStates.night_phase.state)
-await msg.answer("🌃 Наступает ночь. Игроки делают действия...")
-await asyncio.sleep(10)
+def check_victory():
+    mafia = [uid for uid in current_game["alive"] if "маф" in get_role(uid).lower() or "дон" in get_role(uid).lower()]
+    others = [uid for uid in current_game["alive"] if uid not in mafia]
+    if not mafia:
+        return "Мирные победили!"
+    if len(mafia) >= len(others):
+        return "Мафия победила!"
+    return None
 
-# Заглушка: никто не умирает
-await state.set_state(MafiaStates.day_vote.state)
-await msg.answer("🏙 Утро наступило. Все живы. Голосование началось.")
-await show_voting()
+# === РЕГИСТРАЦИЯ КОМАНД ===
+def register_handlers(dp: Dispatcher):
 
-ГОЛОСОВАНИЕ
+    @dp.message_handler(commands=["начать_мафию"])
+    async def start_mafia(msg: Message):
+        if msg.from_user.id != OWNER_ID:
+            return await msg.reply("⛔ Только владелец может начать игру.")
+        current_game["players"].clear()
+        current_game["roles"].clear()
+        current_game["alive"].clear()
+        current_game["votes"].clear()
+        current_game["night_actions"].clear()
+        current_game["phase"] = "lobby"
+        await msg.reply("🤵🏻 True Mafia:\nИгра начинается! Используй /войти чтобы присоединиться.")
 
-async def show_voting(): keyboard = InlineKeyboardMarkup() for uid, p in players.items(): if p['alive']: keyboard.add(InlineKeyboardButton(p['name'], callback_data=f"vote:{uid}")) await bot.send_message(game_chat_id, "🗳️ Кого линчевать?", reply_markup=keyboard)
+    @dp.message_handler(commands=["войти"])
+    async def join_game(msg: Message):
+        uid = msg.from_user.id
+        if current_game["phase"] != "lobby":
+            return await msg.reply("❗ Игра уже идёт.")
+        if uid not in current_game["players"]:
+            current_game["players"].append(uid)
+            await msg.reply("✅ Ты вошёл в игру.")
+        else:
+            await msg.reply("⛔ Ты уже в игре.")
 
-@dp.callback_query_handler(lambda c: c.data.startswith("vote:"), state=MafiaStates.day_vote) async def process_vote(call: types.CallbackQuery, state: FSMContext): victim_id = int(call.data.split(":")[1]) players[victim_id]['alive'] = False await call.message.edit_text(f"🔪 Линчевали: {players[victim_id]['name']} ({players[victim_id]['role']})")
+    @dp.message_handler(commands=["начать_игру"])
+    async def begin_game(msg: Message):
+        if msg.from_user.id != OWNER_ID:
+            return
+        if len(current_game["players"]) < 3:
+            return await msg.reply("❗ Нужно хотя бы 3 игрока.")
+        assign_roles()
+        for uid in current_game["players"]:
+            role = get_role(uid)
+            try:
+                await msg.bot.send_message(uid, f"🎭 Твоя роль: <b>{role}</b>", parse_mode="HTML")
+            except:
+                pass
+        current_game["phase"] = "night"
+        current_game["day"] = 1
+        await msg.reply("🌃 Наступает ночь.\nЖдите сообщений от бота в ЛС.")
 
-# ПРОВЕРКА ПОБЕДЫ
-await check_victory()
-await state.set_state(MafiaStates.night_phase.state)
-await bot.send_message(game_chat_id, "🌃 Наступает новая ночь...")
+    @dp.message_handler(commands=["живые"])
+    async def alive_list(msg: Message):
+        if not current_game["alive"]:
+            return await msg.reply("😴 Никто не жив.")
+        lines = [f"{i+1}. {mention(uid)}" for i, uid in enumerate(current_game["alive"])]
+        await msg.reply("🧍 Живые:\n" + "\n".join(lines), parse_mode="HTML")
 
-async def check_victory(): alive = [p for p in players.values() if p['alive']] mafia = [p for p in alive if "Мафия" in p['role'] or "Дон" in p['role']] civilians = [p for p in alive if "Мафия" not in p['role'] and "Дон" not in p['role']] if not mafia: await bot.send_message(game_chat_id, "👨🏼 Победа мирных!") return if len(mafia) >= len(civilians): await bot.send_message(game_chat_id, "🤵🏻 Победа мафии!") return
+    @dp.message_handler(commands=["убить"])
+    async def vote_kill(msg: Message):
+        if current_game["phase"] != "day":
+            return await msg.reply("⛔ Не время для голосования.")
+        uid = msg.from_user.id
+        if not is_alive(uid): return
+        target_id = msg.reply_to_message.from_user.id if msg.reply_to_message else None
+        if not target_id or target_id not in current_game["alive"]:
+            return await msg.reply("❗ Ответь реплаем на живого игрока.")
+        current_game["votes"][target_id] = current_game["votes"].get(target_id, 0) + 1
+        await msg.reply(f"☑️ Голос принят за {mention(target_id)}", parse_mode="HTML")
 
-if name == 'main': from aiogram import executor executor.start_polling(dp, skip_updates=True)
+    @dp.message_handler(commands=["голоса"])
+    async def show_votes(msg: Message):
+        if not current_game["votes"]:
+            return await msg.reply("🗳 Пока никто не проголосовал.")
+        lines = []
+        for uid, count in current_game["votes"].items():
+            lines.append(f"{mention(uid)} — {count} голос(ов)")
+        await msg.reply("📊 Голоса:\n" + "\n".join(lines), parse_mode="HTML")
 
+    @dp.message_handler(commands=["день"])
+    async def start_day(msg: Message):
+        if msg.from_user.id != OWNER_ID: return
+        current_game["phase"] = "day"
+        killed = []
+        for uid, action in current_game["night_actions"].items():
+            if action["type"] == "kill":
+                killed.append(action["target"])
+        if killed:
+            for dead in killed:
+                if dead in current_game["alive"]:
+                    current_game["alive"].remove(dead)
+            txt = "☀️ День наступает.\nПогибли:\n" + "\n".join([mention(uid) for uid in killed])
+        else:
+            txt = "☀️ День наступает.\nВсе выжили."
+        await msg.reply(txt, parse_mode="HTML")
+        current_game["night_actions"].clear()
+
+        winner = check_victory()
+        if winner:
+            await msg.reply(f"🏁 Игра окончена: {winner}")
+            current_game["phase"] = "ended"
+
+    @dp.message_handler(commands=["ночь"])
+    async def start_night(msg: Message):
+        if msg.from_user.id != OWNER_ID: return
+        current_game["phase"] = "night"
+        await msg.reply("🌃 Ночь. Все роли выполняют свои действия в ЛС.")
+
+    @dp.message_handler(commands=["репорт"])
+    async def report(msg: Message):
+        await msg.reply("📨 Чтобы отправить репорт, напиши: `репорт [причина]`", parse_mode="Markdown")
+
+    @dp.message_handler(lambda m: m.text.lower().startswith("репорт "))
+    async def handle_report(msg: Message):
+        reason = msg.text[7:].strip()
+        await msg.bot.send_message(OWNER_ID, f"🚨 Репорт от {mention(msg.from_user.id)}: {reason}", parse_mode="HTML")
+        await msg.reply("✅ Репорт отправлен.")
